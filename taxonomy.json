@@ -1,0 +1,18 @@
+{
+  "_about": "Sections and topics the app offers. Every item's section and topic must appear here. Add your own subject by adding a section with its topic keys and display names, then import questions with import_items.py.",
+  "sections": {
+    "Math": {
+      "topics": {
+        "arithmetic": "Arithmetic",
+        "algebra": "Algebra",
+        "number-properties": "Number properties"
+      }
+    },
+    "Logic": {
+      "topics": {
+        "deduction": "Deduction",
+        "sets": "Sets"
+      }
+    }
+  }
+}

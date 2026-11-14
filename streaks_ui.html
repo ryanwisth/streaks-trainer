@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Streaks Trainer</title>
+<style>
+:root{--bg:#f7f6f2;--card:#fff;--ink:#1d1d1f;--mute:#6b6b70;--line:#e3e1da;--ok:#1f7a4d;--bad:#b3261e;--acc:#2c5bd6;--pip:#d9d6cc}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1e1e22;--ink:#ececef;--mute:#9a9aa3;--line:#2e2e34;--ok:#4cc38a;--bad:#ff6b5e;--acc:#7aa2ff;--pip:#3a3a42}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+header{display:flex;gap:16px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line)}
+header b{font-size:18px;margin-right:auto}
+nav a{color:var(--mute);text-decoration:none;margin-left:14px;cursor:pointer}
+nav a.on{color:var(--ink);font-weight:600}
+main{max-width:860px;margin:0 auto;padding:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.mute{color:var(--mute);font-size:14px}
+button{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+button:disabled{opacity:.45;cursor:default}
+select,input,textarea{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+textarea{width:100%;min-height:80px}
+input.n{width:64px}
+.rungs{display:flex;gap:8px;margin:8px 0}
+.rung{flex:1;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:14px}
+.rung.now{border-color:var(--acc)}
+.rung.done{border-color:var(--ok)}
+.big{font-size:56px;font-weight:700;line-height:1}
+.pips{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}
+.pip{width:14px;height:14px;border-radius:50%;background:var(--pip)}
+.pip.on{background:var(--ok)}
+.stem{white-space:pre-wrap;font-size:17px;margin:12px 0}
+.choice{display:block;width:100%;text-align:left;margin:6px 0;padding:10px 12px}
+.choice.sel{border-color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc)}
+.choice.key{border-color:var(--ok)}
+.choice.wrong{border-color:var(--bad)}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.err{color:var(--bad);margin:8px 0}
+.run{margin:4px 0;font-size:14px}
+.run .x{color:var(--bad);font-weight:600}
+.cause{color:var(--mute);margin-left:8px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+td,th{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header><b>Streaks Trainer</b><nav><a id="nhome">Ladders</a><a id="nnew">New ladder</a></nav></header>
+<main id="app"></main>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const app = $("#app");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const LET = "ABCDEFGH";
+let cat = null;          // /api/catalog
+let run = null;          // the open ladder session
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  return r.json();
+}
+function mmss(s) { s = Math.round(s || 0); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
+function setNav(id) { for (const a of document.querySelectorAll("nav a")) a.classList.toggle("on", a.id === id); }
+
+function rungCells(l) {
+  return `<div class="rungs">${l.rungs.map(r => `<div class="rung ${r.rung === l.rung ? "now" : ""} ${r.cleared ? "done" : ""}">
+    <b>${esc(r.label)}</b><br>${r.cleared ? "cleared" : `streak ${r.streak}/${r.target}`}
+    <span class="mute"> · used ${r.used}, breaks ${r.breaks}</span></div>`).join("")}</div>`;
+}
+
+// ---------------------------------------------------------------- home
+async function viewHome() {
+  setNav("nhome"); endSitting();
+  const h = await api("/api/home");
+  const bank = h.bank.map(b => `${esc(b.section)}: ${b.n}`).join(" · ") || "empty: run make_sample_bank.py";
+  const kinds = Object.entries(h.breaks.kinds).map(([k, n]) => `${esc(h.breaks.labels[k] || k)}: ${n}`).join(" · ");
+  app.innerHTML = `
+    <div class="card"><div class="mute">Bank (live questions): ${bank}</div></div>
+    ${h.ladders.length ? "" : `<div class="card">No ladders yet. <button class="pri" id="first">Start one</button></div>`}
+    ${h.ladders.map(l => `<div class="card">
+      <div class="row"><b>${esc(l.name)}</b><span class="mute">targets ${l.targets.Easy}·${l.targets.Medium}·${l.targets.Hard} · ${esc(l.status)}</span></div>
+      ${rungCells(l)}
+      <div class="mute">Now: ${esc(l.rung_label)} · fresh questions left: ${Object.entries(l.fresh).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}</div>
+      <div class="row" style="margin-top:8px">
+        ${l.status === "active" ? `<button class="pri" data-go="${l.id}">${l.rung === "Done" ? "Open" : "Practice"}</button>` : ""}
+        ${l.status === "active" && (l.rung === "Easy" || l.rung === "Medium") ? `<button data-jump="${l.id}" title="Move on without clearing the rungs between; logged as a jump">Skip to Hard</button>` : ""}
+        <button data-track="${l.id}">Tracker</button>
+        <button data-arch="${l.id}" data-restore="${l.status === "archived" ? 1 : 0}">${l.status === "archived" ? "Restore" : "Archive"}</button>
+      </div></div>`).join("")}
+    <div class="card"><b>What breaks the streaks</b><div class="mute">${kinds || "No breaks yet."}</div>
+      ${h.breaks.recent.map(r => `<div class="run">${esc(r.ladder)} · ${esc(r.rung)}<span class="cause">${esc(r.cause)}</span></div>`).join("")}</div>`;
+  $("#first")?.addEventListener("click", viewNew);
+  for (const b of app.querySelectorAll("[data-go]")) b.onclick = () => enterRun(+b.dataset.go);
+  for (const b of app.querySelectorAll("[data-jump]")) b.onclick = async () => { await api(`/api/ladder/${b.dataset.jump}/jump`, {rung: "Hard"}); viewHome(); };
+  for (const b of app.querySelectorAll("[data-track]")) b.onclick = () => viewTracker(+b.dataset.track);
+  for (const b of app.querySelectorAll("[data-arch]")) b.onclick = async () => {
+    await api(`/api/ladder/${b.dataset.arch}/archive`, {restore: b.dataset.restore === "1"}); viewHome();
+  };
+}
+
+// ---------------------------------------------------------------- new ladder
+async function viewNew() {
+  setNav("nnew"); endSitting();
+  cat = await api("/api/catalog");
+  const goals = Object.entries(cat.goals).map(([k, g]) => `<option value="${k}" ${k === cat.default_goal ? "selected" : ""}>${esc(g.label)}</option>`).join("");
+  app.innerHTML = `<div class="card">
+    <p><label>Section <select id="fsec">${cat.sections.map(s => `<option>${esc(s.name)}</option>`).join("")}</select></label></p>
+    <p><label>Topic <select id="ftop"></select></label> <span class="mute" id="ffresh"></span></p>
+    <p><label>Streak targets (easy · medium · hard) <select id="fgoal">${goals}<option value="custom">custom</option></select></label></p>
+    <p id="fcustom" hidden>${cat.tiers.map(t => `${t} <input class="n" type="number" min="1" max="50" id="ft${t}" value="3"> `).join("")}</p>
+    <p class="mute">A miss, or a right answer marked as a guess, resets the streak to 0. Every break needs a short note before the next question.</p>
+    <button class="pri" id="fcreate">Create ladder</button><div class="err" id="ferr"></div></div>`;
+  const fillTopics = () => {
+    const s = cat.sections.find(x => x.name === $("#fsec").value);
+    $("#ftop").innerHTML = `<option value="*">All topics</option>` + s.topics.map(t => `<option value="${esc(t.key)}">${esc(t.name)}</option>`).join("");
+    showFresh();
+  };
+  const showFresh = () => {
+    const s = cat.sections.find(x => x.name === $("#fsec").value);
+    const t = $("#ftop").value === "*" ? s : s.topics.find(x => x.key === $("#ftop").value);
+    $("#ffresh").textContent = "fresh: " + cat.tiers.map(k => `${k} ${t.fresh[k] || 0}`).join(", ");
+  };
+  $("#fsec").onchange = fillTopics; $("#ftop").onchange = showFresh;
+  $("#fgoal").onchange = () => { $("#fcustom").hidden = $("#fgoal").value !== "custom"; };
+  fillTopics();
+  $("#fcreate").onclick = async () => {
+    const body = {section: $("#fsec").value, topic: $("#ftop").value, goal: $("#fgoal").value};
+    if (body.goal === "custom") body.targets = Object.fromEntries(cat.tiers.map(t => [t, +$("#ft" + t).value]));
+    const r = await api("/api/ladder", body);
+    if (r.error) { $("#ferr").textContent = r.error; return; }
+    enterRun(r.id);
+  };
+}
+
+// ---------------------------------------------------------------- tracker
+async function viewTracker(lid) {
+  endSitting();
+  const s = await api(`/api/ladder/${lid}`);
+  app.innerHTML = `<div class="card"><b>${esc(s.name)}</b> <span class="mute">targets ${s.targets.Easy}·${s.targets.Medium}·${s.targets.Hard}</span>${rungCells(s)}</div>
+    ${s.rungs.filter(r => r.used).map(r => `<div class="card"><b>${esc(r.label)}</b>
+      <span class="mute">used ${r.used} for a target of ${r.target} (${(r.used / r.target).toFixed(1)}×) · longest ${r.longest}${r.cleared ? " · cleared, average " + mmss(r.cleared.avg_seconds) : ""}</span>
+      ${r.runs.map(run => `<div class="run">${run.items.map(i => i.counts ? `${i.n}` : `<span class="x">✕${i.guessed && i.correct ? " (guess)" : ""}</span>`).join(" ")}
+        ${run.broken ? `<span class="cause">${esc(run.cause || "(no note yet)")}${run.kind ? " · " + esc(run.kind) : ""}</span>` : ""}</div>`).join("")}</div>`).join("")}
+    <button id="back">Back</button>`;
+  $("#back").onclick = viewHome;
+}
+
+// ---------------------------------------------------------------- practice
+async function enterRun(lid) {
+  setNav("");
+  const sit = await api("/api/sitting/start", {ladder_id: lid});
+  run = {lid, sitting: sit.sitting_id, item: null, sel: null, guessed: false, t0: 0, answered: null};
+  loadNext();
+}
+function endSitting() {
+  if (run && run.sitting) api("/api/sitting/end", {sitting_id: run.sitting});
+  run = null;
+}
+function headHTML(s) {
+  const pips = Array.from({length: s.target}, (_, i) => `<span class="pip ${i < s.streak ? "on" : ""}"></span>`).join("");
+  return `<div class="card"><div class="row"><b>${esc(s.name)}</b><span class="mute">${esc(s.rung_label)}</span></div>
+    <div class="row"><span class="big">${s.streak}</span><span class="mute">of ${s.target} in a row · longest today ${s.longest_today}${s.speed_avg != null ? " · average " + mmss(s.speed_avg) : ""}</span></div>
+    <div class="pips">${pips}</div></div>`;
+}
+async function loadNext() {
+  const s = await api(`/api/ladder/${run.lid}`);
+  const r = await api(`/api/ladder/${run.lid}/next`, {});
+  if (r.need_cause) return causeForm(s, r.need_cause);
+  if (r.done) return doneView(s);
+  if (r.error) { app.innerHTML = headHTML(s) + `<div class="card err">${esc(r.error)}</div><button id="back">Back</button>`; $("#back").onclick = viewHome; return; }
+  Object.assign(run, {item: r.item, sel: null, guessed: false, t0: Date.now(), answered: null});
+  const it = r.item;
+  app.innerHTML = headHTML(s) + `<div class="card">
+    <div class="mute">${esc(it.section)} · ${esc(it.tier)}</div>
+    <div class="stem">${esc(it.stem)}</div>
+    ${it.choices.map((c, i) => `<button class="choice" data-i="${i}"><b>${LET[i]}</b>&nbsp; ${esc(c)}</button>`).join("")}
+    <div class="row" style="margin-top:10px">
+      <label><input type="checkbox" id="guess"> I guessed (G)</label>
+      <button class="pri" id="submit" disabled>Submit (Enter)</button>
+      <button id="skip" title="The question is broken or unreadable. No streak effect.">Skip broken question</button>
+      <button id="leave">Leave</button>
+    </div></div>`;
+  for (const b of app.querySelectorAll(".choice")) b.onclick = () => pick(+b.dataset.i);
+  $("#guess").onchange = e => { run.guessed = e.target.checked; };
+  $("#submit").onclick = submit;
+  $("#skip").onclick = async () => { await api("/api/skip", {item_id: it.item_id}); loadNext(); };
+  $("#leave").onclick = viewHome;
+}
+function pick(i) {
+  if (!run || run.answered || !run.item || i >= run.item.choices.length) return;
+  run.sel = i;
+  for (const b of app.querySelectorAll(".choice")) b.classList.toggle("sel", +b.dataset.i === i);
+  $("#submit").disabled = false;
+}
+async function submit() {
+  if (!run || run.sel === null || run.answered) return;
+  const secs = (Date.now() - run.t0) / 1000;
+  const r = await api("/api/answer", {ladder_id: run.lid, item_id: run.item.item_id, given: LET[run.sel],
+                                      guessed: run.guessed, seconds: secs, sitting_id: run.sitting});
+  if (r.error) { app.insertAdjacentHTML("beforeend", `<div class="err">${esc(r.error)}</div>`); return; }
+  run.answered = r;
+  for (const b of app.querySelectorAll(".choice")) {
+    const L = LET[+b.dataset.i];
+    if (L === r.answer) b.classList.add("key"); else if (L === r.given) b.classList.add("wrong");
+  }
+  const verdict = r.counts ? `<b class="ok">Right. Streak ${r.streak}/${r.target}.</b>`
+    : r.correct ? `<b class="bad">Right, but guessed: the streak resets (was ${r.broke_at}).</b>`
+    : `<b class="bad">Wrong. The key is ${esc(r.answer)}. The streak resets (was ${r.broke_at}).</b>`;
+  const clear = r.clear ? `<div class="card ok"><b>${esc(r.clear.rung)} cleared</b> in ${r.clear.used} questions with ${r.clear.breaks} breaks. Next: ${esc(r.clear.next)}.</div>` : "";
+  app.querySelector(".card:last-of-type").insertAdjacentHTML("beforeend", `
+    <div style="margin-top:12px">${verdict} <span class="mute">${mmss(secs)}</span></div>
+    ${r.solution ? `<div class="stem mute">${esc(r.solution)}</div>` : ""}
+    ${clear}
+    <div class="row"><button class="pri" id="next">${r.counts ? "Next (Enter)" : "Write the break note (Enter)"}</button>
+      <button id="void" title="The key is wrong or the question is broken: remove it and recount the streak">Void: bad question</button></div>`);
+  for (const id of ["#submit", "#skip", "#guess"]) $(id).disabled = true;
+  $("#next").onclick = loadNext;
+  $("#void").onclick = async () => { await api("/api/void", {attempt_id: r.attempt_id, reason: "voided by learner: bad question"}); loadNext(); };
+}
+function causeForm(s, aid) {
+  run.answered = {cause: true};
+  app.innerHTML = headHTML(s) + `<div class="card"><b>The streak broke.</b>
+    <p>What broke it, and what will you do differently before the next question? In your own words.</p>
+    <p><select id="ckind"><option value="">Kind of break…</option>${Object.entries(cat?.break_kinds || {}).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></p>
+    <textarea id="ctext"></textarea>
+    <div class="row"><button class="pri" id="csave">Save and continue</button></div><div class="err" id="cerr"></div></div>`;
+  if (!cat) api("/api/catalog").then(c => { cat = c; causeForm(s, aid); });
+  $("#ctext").focus();
+  $("#csave").onclick = async () => {
+    const r = await api("/api/cause", {attempt_id: aid, text: $("#ctext").value, kind: $("#ckind").value});
+    if (r.error) { $("#cerr").textContent = r.error; return; }
+    loadNext();
+  };
+}
+function doneView(s) {
+  const speedDone = s.rungs.filter(r => r.rung.startsWith("S") && r.cleared).length;
+  app.innerHTML = headHTML({...s, streak: 0, target: 0}) + `<div class="card"><b class="ok">Ladder cleared.</b>${rungCells(s)}
+    <p class="mute">Speed stages are optional: each one needs a streak as long as the medium target, averaging at or under 4:00, 3:00, 2:30, then 2:00 a question.</p>
+    <div class="row">${speedDone < 4 ? `<button class="pri" id="speed">Start the next speed stage</button>` : ""}<button id="back">Back</button></div><div class="err" id="serr"></div></div>`;
+  $("#back").onclick = viewHome;
+  $("#speed")?.addEventListener("click", async () => {
+    const r = await api(`/api/ladder/${s.id}/speed`, {});
+    if (r.error) { $("#serr").textContent = r.error; return; }
+    loadNext();
+  });
+}
+
+document.addEventListener("keydown", e => {
+  if (!run || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+  const k = e.key.toUpperCase();
+  if (!run.answered && LET.includes(k) && k !== "G") pick(LET.indexOf(k));
+  else if (k === "G" && !run.answered && $("#guess")) { $("#guess").checked = !$("#guess").checked; run.guessed = $("#guess").checked; }
+  else if (e.key === "Enter") { e.preventDefault(); if (!run.answered) submit(); else if ($("#next")) loadNext(); }
+});
+$("#nhome").onclick = viewHome;
+$("#nnew").onclick = viewNew;
+api("/api/catalog").then(c => { cat = c; });
+viewHome();
+</script>
+</body>
+</html>

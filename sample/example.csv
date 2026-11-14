@@ -1,0 +1,4 @@
+section,topic,difficulty,stem,choice_a,choice_b,choice_c,choice_d,key,explanation
+Math,arithmetic,Easy,What is 7 × 8?,54,56,58,64,B,7 × 8 = 56.
+Math,algebra,Easy,"If 3x = 21, what is x?",6,7,8,18,B,Divide both sides by 3.
+Logic,sets,Easy,"Of 10 people, 6 like jazz, 5 like rock and 3 like both. How many like neither?",1,2,3,4,B,Jazz or rock = 6 + 5 − 3 = 8; neither = 10 − 8 = 2.
