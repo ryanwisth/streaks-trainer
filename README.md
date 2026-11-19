@@ -2,6 +2,8 @@
 
 A small local web app for streak-based mastery practice on any multiple-choice subject: one topic at a time, easy to hard, where a single miss resets the streak.
 
+**Plain-words write-up:** [A study app where one wrong answer resets your streak](https://ryanwisth.github.io/streaks-trainer.html)
+
 ## Why it exists
 
 Percent-correct hides weak spots: 80 % on a topic can mean you know it, or that you guess well. A streak is a stricter test. You only move from easy to medium to hard questions after getting N in a row, and any miss, or any right answer you guessed, sends the count back to zero. The useful part is what happens at each break: you write down what went wrong and what you will do differently before the next question. This app enforces that loop so it cannot be skipped, and keeps the record so the patterns show. The method itself is described in [METHOD.md](METHOD.md).
